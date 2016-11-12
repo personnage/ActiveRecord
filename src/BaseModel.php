@@ -6,6 +6,7 @@ use ArrayAccess;
 use DateTime;
 use DateTimeInterface;
 use PDO;
+use Doctrine\Common\Inflector\Inflector;
 use Personnage\ActiveRecord\Contracts\Incremental;
 use Personnage\ActiveRecord\Contracts\Timestampable;
 
@@ -13,15 +14,25 @@ abstract class BaseModel implements ArrayAccess
 {
     protected $table;
 
-    protected $attributes = [];
-
     public $exists = false;
+
+    protected $original = [];
+
+    protected $attributes = [];
 
     abstract protected function getPdo();
 
+    /**
+     * Create a new AR model instance
+     *
+     * @param  array  $attributes
+     * @return void
+     */
     public function __construct(array $attributes = [])
     {
         $this->boot();
+
+        $this->syncOriginal();
 
         $this->fill($attributes);
     }
@@ -31,9 +42,51 @@ abstract class BaseModel implements ArrayAccess
         //
     }
 
+    /**
+     * Determine if the model or given attribute(s) have been modified.
+     *
+     * @param  array|string|null  $attributes
+     * @return bool
+     */
     public function isDirty($attributes = null)
     {
+        $dirty = $this->getDirty();
+
+        if (is_null($attributes)) {
+            return count($dirty) > 0;
+        }
+
+        if (! is_array($attributes)) {
+            $attributes = func_get_args();
+        }
+
+        foreach ($attributes as $attribute) {
+            if (array_key_exists($attribute, $dirty)) {
+                return true;
+            }
+        }
+
         return false;
+    }
+
+    /**
+     * Get the attributes that have been changed since last sync.
+     *
+     * @return array
+     */
+    public function getDirty()
+    {
+        $dirty = [];
+
+        foreach ($this->attributes as $key => $value) {
+            if (! array_key_exists($key, $this->original)) {
+                $dirty[$key] = $value;
+            } elseif ($value !== $this->original[$key]) {
+                $dirty[$key] = $value;
+            }
+        }
+
+        return $dirty;
     }
 
     /**
@@ -48,9 +101,8 @@ abstract class BaseModel implements ArrayAccess
         }
 
         $components = explode('\\', get_class($this));
-        $className = array_pop($components);
 
-        return mb_strtolower($className);
+        return mb_strtolower(Inflector::pluralize(array_pop($components)));
     }
 
     /**
@@ -75,6 +127,18 @@ abstract class BaseModel implements ArrayAccess
         return $this;
     }
 
+    /**
+     * Sync the original attributes with the current.
+     *
+     * @return $this
+     */
+    public function syncOriginal()
+    {
+        $this->original = $this->attributes;
+
+        return $this;
+    }
+
     public function getAttribute($key)
     {
         if (array_key_exists($key, $this->attributes)) {
@@ -89,33 +153,41 @@ abstract class BaseModel implements ArrayAccess
         return $this;
     }
 
-    public function save(array $options = [])
-    {
-        if (! $this->exists) {
-            $saved = $this->performInsert();
-        } else {
-            $saved = $this->isDirty() ? $this->performUpdate($query, $options) : true;
-        }
-
-        if ($saved) {
-            $this->finishSave($options);
-        }
-
-        return $saved;
-    }
-
-    protected function finishSave()
-    {
-        return true; // stub
-    }
-
-    public function update(array $attributes = [])
+    /**
+     * Update the model in the database.
+     *
+     * @param  array  $attributes
+     * @param  array  $options
+     * @return bool
+     */
+    public function update(array $attributes = [], array $options = [])
     {
         if (! $this->exists) {
             return false;
         }
 
-        return $this->fill($attributes)->save();
+        return $this->fill($attributes)->save($options);
+    }
+
+    /**
+     * Save the model to the database.
+     *
+     * @param  array  $options
+     * @return bool
+     */
+    public function save(array $options = [])
+    {
+        if ($this->exists) {
+            $saved = $this->isDirty() ? $this->performUpdate($options) : true;
+        } else {
+            $saved = $this->performInsert();
+        }
+
+        if ($saved) {
+            $this->syncOriginal();
+        }
+
+        return $saved;
     }
 
     public function statement($query, array $bindings = [])
@@ -156,6 +228,15 @@ abstract class BaseModel implements ArrayAccess
         $this->exists = true;
 
         return true;
+    }
+
+    protected function performUpdate(array $options = [])
+    {
+        if ($this->usesTimestamps() && $options['touch'] ?? true) {
+            $this->updateTimestamp();
+        }
+
+        // do update
     }
 
     /**
@@ -210,11 +291,6 @@ abstract class BaseModel implements ArrayAccess
         return "insert into $table ($columns) values ($parameters)";
     }
 
-    protected function performUpdate()
-    {
-        //
-    }
-
     /**
      * Determine if the model uses timestamps.
      *
@@ -248,11 +324,24 @@ abstract class BaseModel implements ArrayAccess
         }
     }
 
+    /**
+     * Dynamically retrieve attributes on the model.
+     *
+     * @param  string  $key
+     * @return mixed
+     */
     public function __get($key)
     {
         return $this->getAttribute($key);
     }
 
+    /**
+     * Dynamically set attributes on the model.
+     *
+     * @param  string  $key
+     * @param  mixed  $value
+     * @return void
+     */
     public function __set($key, $value)
     {
         $this->setAttribute($key, $value);

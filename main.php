@@ -9,8 +9,6 @@ $dotenv->load();
 
 class User extends Model
 {
-    protected $table = 'users';
-
     protected function getPdo()
     {
         $dsn = sprintf(
@@ -37,12 +35,15 @@ class User extends Model
 
 $user = new User([
     'name' => 'John Doe',
-    'email' => 'jd@example.com'
+    'email' => 'jd@example.com',
+
+    // 'created_at' => (new DateTime())->sub(new DateInterval('P1Y'))
 ]);
 
-var_dump($user->id);
+// create new record
 $user->save();
-var_dump($user->id);
+// Update record
+$user->save();
 
 // // Find User by id (PK)
 // $user = User::find(1);
