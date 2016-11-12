@@ -1,0 +1,24 @@
+{
+    "name": "personnage/active-record",
+    "description": "Simple active record",
+    "keywords": ["database", "sql", "orm"],
+    "license": "MIT",
+    "type": "library",
+    "authors": [
+        {
+            "name": "Kirill Lyubaev",
+            "email": "lubaev.ka@gmail.com"
+        }
+    ],
+    "require": {
+        "php": ">=7.0",
+    },
+    "require-dev": {
+        "vlucas/phpdotenv": "^2.4"
+    },
+    "autoload": {
+        "psr-4": {
+            "Personnage\\ActiveRecord\\": "src/"
+        }
+    }
+}
